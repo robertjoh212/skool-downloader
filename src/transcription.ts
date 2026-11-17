@@ -20,29 +20,34 @@ export function trustedScripts(html:string,scripts:string[]):string {
  .replace('</body>',scripts.map(script=>'<script src="'+script+'"></script>').join('')+'</body>');
 }
 export async function buildSearch(courseDir:string):Promise<{videos:number;transcripts:number;passages:number}> {
+ const libraryState=await fs.readJson(path.join(courseDir,'.library-state.json')).catch(()=>null);
+ const library=Boolean(libraryState);
  const items:TranscriptLesson[]=[];
  let videos=0;
- async function visit(dir:string){
+ async function visit(dir:string,courseName=''){
+  if(library){const meta=await fs.readJson(path.join(dir,'.course.json')).catch(()=>null);if(meta?.courseName)courseName=String(meta.courseName);}
   for(const entry of await fs.readdir(dir,{withFileTypes:true})){
    if(entry.isSymbolicLink())continue;
    const p=path.join(dir,entry.name);
-   if(entry.isDirectory()&&!['assets','.auth','.git','node_modules'].includes(entry.name))await visit(p);
+   if(entry.isDirectory()&&!['assets','.auth','.git','node_modules'].includes(entry.name))await visit(p,courseName);
    if(entry.isFile()&&entry.name.toLowerCase().endsWith('.mp4'))videos++;
    if(entry.isFile()&&entry.name==='transcript.json'){
     const json=p;
     const transcript=await fs.readJson(json);
     if(!transcript.complete||!Array.isArray(transcript.segments))continue;
     const segments=transcript.segments.filter((s:any)=>Number.isFinite(s.start)&&Number.isFinite(s.end)&&s.start>=0&&typeof s.text==='string');
-    const lesson={title:String(transcript.title||path.basename(dir)),path:encodePath(path.relative(courseDir,path.join(dir,'index.html'))),segments};
+    const media=path.resolve(dir,transcript.media_path||'video.mp4');
+    if(await fs.pathExists(media+'.retry.json'))continue;
+    const lesson={title:(library&&courseName?courseName+' / ':'')+String(transcript.title||path.basename(dir)),path:encodePath(path.relative(courseDir,path.join(dir,'index.html'))),segments};
     items.push(lesson);
     const lessonPage=path.join(dir,'index.html');
-    if(!await fs.pathExists(lessonPage)&&typeof transcript.media_path==='string'){
+    if(!library&&!await fs.pathExists(lessonPage)&&typeof transcript.media_path==='string'){
       const media=path.resolve(dir,transcript.media_path);
       const relative=path.relative(courseDir,media);
       if(relative.startsWith('..')||path.isAbsolute(relative))throw new Error('Transcript media is outside archive');
       await fs.writeFile(lessonPage,safeDocument('<html><head><meta charset="utf-8"><title>'+escapeHtml(lesson.title)+'</title></head><body><h1>'+escapeHtml(lesson.title)+'</h1><video controls src="'+encodePath(path.relative(dir,media))+'" style="max-width:100%"></video><div class="nav"></div></body></html>'));
     }
-    if(await fs.pathExists(lessonPage)){
+    if(!library&&await fs.pathExists(lessonPage)){
       let html=await fs.readFile(lessonPage,'utf8');
       html=html.replace(/<!-- transcript-start -->[\s\S]*?<!-- transcript-end -->/g,'').replace(/<script src="archive-player\.js"><\/script>/g,'');
       const searchPath=encodePath(path.relative(dir,path.join(courseDir,'search.html')));
@@ -56,14 +61,14 @@ export async function buildSearch(courseDir:string):Promise<{videos:number;trans
  await visit(courseDir);
  items.sort((a,b)=>a.path.localeCompare(b.path,undefined,{numeric:true}));
  // Player scripts are fixed trusted source, never lesson-provided JavaScript.
- for(const item of items){
+ for(const item of library?[]:items){
   const decoded=item.path.split('/').map(decodeURIComponent).join(path.sep);
   await fs.writeFile(path.join(path.dirname(path.join(courseDir,decoded)),'archive-player.js'),playerClient);
  }
  const encoded=JSON.stringify(items).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
  await fs.writeFile(path.join(courseDir,'archive-search-data.js'),'window.ARCHIVE_TRANSCRIPTS='+encoded+';');
  await fs.writeFile(path.join(courseDir,'archive-search.js'),searchClient);
- const title=await fs.readJson(path.join(courseDir,'.course.json')).then(m=>String(m.courseName)).catch(()=>path.basename(courseDir));
+ const title=libraryState?.title||await fs.readJson(path.join(courseDir,'.course.json')).then(m=>String(m.courseName)).catch(()=>path.basename(courseDir));
  const html=safeDocument('<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Search '+escapeHtml(title)+'</title><style>body{font:17px Segoe UI,sans-serif;background:#f3f5fa;color:#172033;margin:0}main{max-width:960px;margin:40px auto;padding:24px}a{color:#2559b5}form{display:flex;gap:12px;margin:20px 0}input{flex:1;min-width:0;padding:14px;font:inherit;border:1px solid #a6b2c8;border-radius:8px}button{padding:14px 24px;font:inherit;background:#2559b5;color:white;border:0;border-radius:8px}article{background:white;border-radius:12px;padding:22px;margin:14px 0}article a{font-weight:700}p{line-height:1.6}.muted{color:#566479}</style></head><body><main><a href="index.html">← Back to course</a><h1>Search course videos</h1><h2>'+escapeHtml(title)+'</h2><p class="muted">'+items.length+' of '+videos+' videos transcribed. Automatic transcripts may contain errors.</p><form id="search-form"><label for="query">Topic</label><input id="query" type="search" placeholder="Try onboarding, paid ads, or &quot;sales presentation&quot;" autofocus><button type="submit">Search</button></form><p id="status" role="status"></p><div id="results"></div><p><a href="all-transcripts.md">Read all transcripts</a></p></main></body></html>');
  await fs.writeFile(path.join(courseDir,'search.html'),trustedScripts(html,['archive-search-data.js','archive-search.js']));
  await fs.writeFile(path.join(courseDir,'all-transcripts.md'),'# '+title+' — video transcripts\n\n'+items.map(item=>'## '+item.title+'\n\n'+item.segments.map(s=>'['+formatTime(s.start)+'] '+s.text).join('\n\n')).join('\n\n'));

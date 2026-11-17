@@ -39,6 +39,10 @@ def main():
     videos=sorted(args.course.rglob('*.mp4'),key=lambda p:[int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(p))])
     model=None; failed=[]; completed=0
     for number,video in enumerate(videos,1):
+        if Path(str(video)+'.retry.json').exists():
+            failed.append({'video':str(video),'error':'Video duration mismatch; retry download before transcription'})
+            print(f"[{number}/{len(videos)}] Deferred: duration mismatch: {video.name}",flush=True)
+            continue
         dest=video.parent if video.name=='video.mp4' else video.parent/'transcripts'/hashlib.sha256(video.name.encode()).hexdigest()[:12]
         dest.mkdir(parents=True,exist_ok=True)
         try:
@@ -48,6 +52,9 @@ def main():
             meta=json.loads((ancestor/'lesson.json').read_text(encoding='utf-8')) if (ancestor/'lesson.json').exists() else {}
             title=meta.get('title',video.stem)+(' — linked video' if video.name!='video.mp4' else '')
             source=fingerprint(video)
+            receipt=Path(str(video)+'.verified.json')
+            if not receipt.exists() or json.loads(receipt.read_text(encoding='utf-8')).get('sha256')!=source:
+                raise RuntimeError('Video is not validated; run audit-videos before transcription')
             json_path=dest/'transcript.json'
             config={'model':args.model,'language':args.language}
             if json_path.exists():

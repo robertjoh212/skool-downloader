@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { validateVideo } from './video-validation.js';
+import { validateVideo, VideoDurationMismatch, type VideoExpectation } from './video-validation.js';
 import YTDlpWrapPkg from 'yt-dlp-wrap';
 import path from 'path';
 import os from 'os';
@@ -507,19 +507,30 @@ export class Downloader {
         return this.initPromise;
     }
 
+    async inspectVideo(url: string): Promise<VideoExpectation> {
+        if (!this.ytDlp) await this.init();
+        const args=[normalizeVideoUrl(url),'--dump-single-json','--skip-download','--no-playlist','--socket-timeout','20','--retries','2'];
+        if(fs.existsSync(COOKIES_TXT_PATH))args.push('--cookies',COOKIES_TXT_PATH);
+        try { const info=JSON.parse(await this.ytDlp!.execPromise(args));return {duration:Number(info.duration)>0?Number(info.duration):undefined,estimatedBytes:Number(info.filesize||info.filesize_approx)||undefined}; }
+        catch { this.logger.warn('    Source duration unavailable; retaining full-file validation.');return {}; }
+    }
+
     async downloadVideo(url: string, outputDir: string, filename: string, options: { maxHeight?: number } = {}) {
         if (!this.ytDlp) await this.init();
 
         await fs.ensureDir(outputDir);
         const outputPath = path.join(outputDir, `${filename}.mp4`);
 
+        const expectation = await this.inspectVideo(url);
+
         // Accept an existing file only after checking its contents.
         if (await fs.pathExists(outputPath)) {
             try {
-                await validateVideo(outputPath, this.ffmpegPath!);
+                await validateVideo(outputPath, this.ffmpegPath!, expectation);
                 this.logger.info('    Verified existing video; skipping download.');
                 return;
-            } catch {
+            } catch (error) {
+                if(error instanceof VideoDurationMismatch && process.env.SKOOL_RETRY_DURATION_MISMATCHES!=='1')throw error;
                 const quarantined = outputPath + '.invalid-' + Date.now();
                 await fs.move(outputPath, quarantined);
                 this.logger.warn('    Invalid video preserved for inspection; downloading again.');
@@ -570,7 +581,7 @@ export class Downloader {
 
         try {
             await this.ytDlp!.execPromise(args);
-            await validateVideo(outputPath, this.ffmpegPath!);
+            await validateVideo(outputPath, this.ffmpegPath!, expectation);
             this.logger.info(`Video downloaded successfully to ${outputDir}`);
         } catch (error) {
             this.logger.error(`Error downloading video: ${String(error)}`);

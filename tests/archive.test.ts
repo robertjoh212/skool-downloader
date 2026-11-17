@@ -100,3 +100,13 @@ test('pasted document URLs and HTML links are collected without duplicate downlo
  assert.deepEqual(links,[{url,title:url}]);
  assert.deepEqual(extractContentUrls('<p>No links</p>'),[]);
 });
+
+test('duration discrepancies are queued for retry and cleared only after a matching check',async()=>{
+ const file=path.join(root,'duration-check.mp4');await fs.copy(clip,file);
+ await assert.rejects(()=>validateVideo(file,ffmpeg,{duration:60}),/Retry later/);
+ assert.equal((await fs.readJson(file+'.verified.json')).durationCheck,'retry');
+ assert.equal((await fs.readJson(file+'.retry.json')).reason,'duration-mismatch');
+ await validateVideo(file,ffmpeg,{duration:1});
+ assert.equal((await fs.readJson(file+'.verified.json')).durationCheck,'passed');
+ assert.equal(await fs.pathExists(file+'.retry.json'),false);
+});
