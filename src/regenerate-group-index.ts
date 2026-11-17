@@ -3,12 +3,17 @@ import path from 'node:path';
 import {safeDocument,escapeHtml} from './archive-safety.js';
 import {trustedScripts} from './transcription.js';
 export async function courseStats(root:string){
- const stats={lessons:0,videos:0,transcripts:0,retries:0,incomplete:0,durationPassed:0,durationUnavailable:0,durationPending:0,validationFailed:0,validationPending:0};
+ const stats={lessons:0,videos:0,transcripts:0,retries:0,incomplete:0,durationPassed:0,durationUnavailable:0,durationPending:0,validationFailed:0,validationPending:0,missingVideos:0,missingVideoLessons:[] as string[]};
  async function walk(dir:string){for(const e of await fs.readdir(dir,{withFileTypes:true}).catch(()=>[])){
   if(e.isSymbolicLink())continue;const p=path.join(dir,e.name);
   if(e.isDirectory()&&!['assets','.auth','node_modules','.git'].includes(e.name))await walk(p);
   else if(e.isFile()){
-   if(e.name==='lesson.json'){stats.lessons++;const m=await fs.readJson(p).catch(()=>({}));if(m.status==='incomplete')stats.incomplete++;}
+   if(e.name==='lesson.json'){
+    stats.lessons++;const m=await fs.readJson(p).catch(()=>({}));if(m.status==='incomplete')stats.incomplete++;
+    if((m.videoLink||m.videoError||m.hasVideo)&&!await fs.pathExists(path.join(dir,'video.mp4'))){
+     stats.missingVideos++;stats.missingVideoLessons.push(m.title||path.basename(dir));
+    }
+   }
    if(e.name==='transcript.json'){const m=await fs.readJson(p).catch(()=>({}));if(m.complete)stats.transcripts++;}
    if(e.name.endsWith('.mp4')){
     stats.videos++;
@@ -28,6 +33,7 @@ export async function courseStats(root:string){
 }
 export function videoCheckSummary(s:any):string{
  return [s.durationPassed+' duration checks passed',
+ s.missingVideos?s.missingVideos+' missing video download'+(s.missingVideos===1?'':'s')+': '+s.missingVideoLessons.join('; '):'',
  s.retries?s.retries+' duration mismatch'+(s.retries===1?'':'es')+' — retry later':'',
  s.durationUnavailable?s.durationUnavailable+' source runtimes unavailable':'',
  s.validationFailed?s.validationFailed+' failed validation — retry later':'',
@@ -41,7 +47,7 @@ export async function regenerateGroupIndex(groupDir:string,options:{silent?:bool
  if(!await fs.pathExists(groupDir))return;
  let state=await fs.readJson(path.join(groupDir,'.library-state.json')).catch(()=>null);
  if(!state){const courses=[];for(const e of await fs.readdir(groupDir,{withFileTypes:true})){if(!e.isDirectory()||e.name.startsWith('.'))continue;const m=await fs.readJson(path.join(groupDir,e.name,'.course.json')).catch(()=>null);if(m)courses.push({id:e.name,title:m.courseName,status:'complete',order:m.courseIndex??courses.length+1});}state={title:path.basename(groupDir),courses};}
- const courses=[];for(const course of state.courses){const stats=await courseStats(path.join(groupDir,course.id));let status=course.status;if(status==='complete'&&(stats.retries||stats.incomplete||stats.validationFailed))status='retry';else if(status==='complete'&&(stats.transcripts<stats.videos||stats.durationUnavailable||stats.validationPending||stats.durationPending))status='review';const cover='assets/course-'+course.id+'.jpg';courses.push({...course,...stats,checks:videoCheckSummary(stats),cover:await fs.pathExists(path.join(groupDir,cover))?cover:null,status,label:labels[status]||status,available:await fs.pathExists(path.join(groupDir,course.id,'index.html')),href:encodeURIComponent(course.id)+'/index.html'});}
+ const courses=[];for(const course of state.courses){const stats=await courseStats(path.join(groupDir,course.id));let status=course.status;if(status==='complete'&&(stats.missingVideos||stats.retries||stats.incomplete||stats.validationFailed))status='retry';else if(status==='complete'&&(stats.transcripts<stats.videos||stats.durationUnavailable||stats.validationPending||stats.durationPending))status='review';const cover='assets/course-'+course.id+'.jpg';courses.push({...course,...stats,checks:videoCheckSummary(stats),cover:await fs.pathExists(path.join(groupDir,cover))?cover:null,status,label:labels[status]||status,available:await fs.pathExists(path.join(groupDir,course.id,'index.html')),href:encodeURIComponent(course.id)+'/index.html'});}
  const total={courses:courses.length,complete:courses.filter(c=>c.status==='complete').length,lessons:courses.reduce((n,c)=>n+c.lessons,0),videos:courses.reduce((n,c)=>n+c.videos,0),transcripts:courses.reduce((n,c)=>n+c.transcripts,0)};
  await atomic(path.join(groupDir,'library-progress.json'),JSON.stringify({title:state.title,courses,total,updatedAt:new Date().toISOString()}));
  const cards=courses.map((c,i)=>'<li class="card">'+(c.cover?'<img class="course-cover" src="'+c.cover+'" alt="'+escapeHtml(c.title)+' cover">':'')+'<div class="eyebrow">COURSE '+String(i+1).padStart(2,'0')+(c.recordings?' · RECORDINGS LAST':'')+'</div><h2>'+escapeHtml(c.title)+'</h2><p class="state" id="state-'+escapeHtml(c.id)+'">'+escapeHtml(c.label)+'</p><p class="counts" id="counts-'+escapeHtml(c.id)+'">'+c.lessons+' lessons · '+c.videos+' videos · '+c.transcripts+' transcribed</p><p class="muted" id="duration-'+escapeHtml(c.id)+'">'+escapeHtml(c.checks)+'</p><a class="open" id="open-'+escapeHtml(c.id)+'"'+(c.available?' href="'+c.href+'"':'')+'>'+(c.available?'Open course →':'Waiting to download')+'</a></li>').join('');
