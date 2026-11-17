@@ -258,6 +258,7 @@ async function regenerateIndex(
         await fs.writeFile(file, page);
     }
 
+    const hasSearch = await fs.pathExists(path.join(downloadsDir, 'search.html'));
     // Generate the index HTML
     const indexHtml = `
             <!DOCTYPE html>
@@ -440,6 +441,7 @@ async function regenerateIndex(
             </head>
             <body>
                 <div class="page">
+                    ${hasSearch ? '<!-- search-link --><p><a href="search.html">🔎 Search video transcripts</a></p><!-- end-search-link -->' : ''}
                     ${groupName ? `
                         <div class="breadcrumb">
                             <a href="../index.html">${escapeHtml(groupName)}</a>

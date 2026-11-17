@@ -1,5 +1,5 @@
 """Local, resumable video transcription. No media is sent to an API."""
-import argparse, hashlib, json, os, sys, time
+import argparse, hashlib, json, os, re, sys, time
 from pathlib import Path
 
 def timestamp(seconds, srt=False):
@@ -36,7 +36,7 @@ def main():
                     handles.append(os.add_dll_directory(str(folder)))
                     os.environ['PATH']=str(folder)+os.pathsep+os.environ.get('PATH','')
     from faster_whisper import WhisperModel
-    videos=sorted(args.course.rglob('*.mp4'))
+    videos=sorted(args.course.rglob('*.mp4'),key=lambda p:[int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)',str(p))])
     model=None; failed=[]; completed=0
     for number,video in enumerate(videos,1):
         dest=video.parent if video.name=='video.mp4' else video.parent/'transcripts'/hashlib.sha256(video.name.encode()).hexdigest()[:12]
