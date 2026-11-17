@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { validateVideo } from './video-validation.js';
 import YTDlpWrapPkg from 'yt-dlp-wrap';
 import path from 'path';
 import os from 'os';
@@ -511,12 +513,16 @@ export class Downloader {
         await fs.ensureDir(outputDir);
         const outputPath = path.join(outputDir, `${filename}.mp4`);
 
-        // Skip if video already exists
-        if (fs.existsSync(outputPath)) {
-            const stats = fs.statSync(outputPath);
-            if (stats.size > 0) {
-                this.logger.info(`    ⏭️  Video already exists, skipping download (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+        // Accept an existing file only after checking its contents.
+        if (await fs.pathExists(outputPath)) {
+            try {
+                await validateVideo(outputPath, this.ffmpegPath!);
+                this.logger.info('    Verified existing video; skipping download.');
                 return;
+            } catch {
+                const quarantined = outputPath + '.invalid-' + Date.now();
+                await fs.move(outputPath, quarantined);
+                this.logger.warn('    Invalid video preserved for inspection; downloading again.');
             }
         }
 
@@ -540,7 +546,7 @@ export class Downloader {
             ...source,
             ...format,
             '-o', outputPath,
-            '--no-check-certificates',
+            '--abort-on-unavailable-fragments',
             '--prefer-free-formats',
             '--add-header', 'Referer:https://www.skool.com/',
             '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -561,6 +567,7 @@ export class Downloader {
 
         try {
             await this.ytDlp!.execPromise(args);
+            await validateVideo(outputPath, this.ffmpegPath!);
             this.logger.info(`Video downloaded successfully to ${outputDir}`);
         } catch (error) {
             this.logger.error(`Error downloading video: ${String(error)}`);
@@ -603,34 +610,24 @@ export class Downloader {
         await fs.move(partPath, outputPath, { overwrite: true });
     }
 
-    async localizeImages(html: string, outputDir: string): Promise<string> {
+    async localizeImages(html: string, outputDir: string, onError: (message: string) => void = () => {}): Promise<string> {
         const assetsDir = path.join(outputDir, 'assets');
-        const imgRegex = /<img[^>]+src="([^">]+)"/g;
-        let match;
-        let processedHtml = html;
-        const tasks: { url: string; outputPath: string }[] = [];
-
-        while ((match = imgRegex.exec(html)) !== null) {
-            const url = match[1];
-            if (!url) continue;
-            if (!url.startsWith('http')) continue;
-
-            const filename = `img_${Buffer.from(url).toString('base64').substring(0, 10)}_${path.basename(new URL(url).pathname)}`;
-            const outputPath = path.join(assetsDir, filename);
-            tasks.push({ url, outputPath });
-            
-            processedHtml = processedHtml.replace(url, `assets/${filename}`);
+        let result = html;
+        const urls = [...new Set([...html.matchAll(/<img[^>]+src="([^">]+)"/g)].map(m => m[1]))];
+        for (const encodedUrl of urls) {
+            const url = encodedUrl.replace(/&amp;/g, '&');
+            if (!/^https?:\/\//i.test(url)) continue;
+            try {
+                const filename = 'img_' + createHash('sha256').update(url).digest('hex').slice(0,24) + (path.extname(new URL(url).pathname).match(/^\.[a-z0-9]{1,5}$/i)?.[0] || '.img');
+                await this.downloadAsset(url, path.join(assetsDir, filename));
+                result = result.split('src="'+encodedUrl+'"').join('src="assets/'+filename+'"');
+            } catch {
+                const message = 'An image could not be saved for offline viewing.';
+                this.logger.warn(message);
+                onError(message);
+                // Preserve the source reference; never claim a nonexistent local file exists.
+            }
         }
-
-        if (tasks.length > 0) {
-            this.logger.info(`      🖼️  Localizing ${tasks.length} images...`);
-            await Promise.all(tasks.map(task => 
-                this.downloadAsset(task.url, task.outputPath).catch(err => 
-                    this.logger.warn(`      ⚠️ Failed to localize image: ${task.url}`)
-                )
-            ));
-        }
-
-        return processedHtml;
+        return result;
     }
 }

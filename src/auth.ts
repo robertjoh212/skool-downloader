@@ -8,7 +8,7 @@ export const STORAGE_STATE_PATH = path.join(AUTH_DIR, 'storage_state.json');
 export const COOKIES_TXT_PATH = path.join(AUTH_DIR, 'cookies.txt');
 
 export async function ensureAuthDir() {
-    await fs.ensureDir(AUTH_DIR);
+    await fs.ensureDir(AUTH_DIR, {mode: 0o700});
 }
 
 export type AuthStatus = {
@@ -68,6 +68,7 @@ export async function login() {
     console.log('Login detected. Saving session state...');
     await context.storageState({ path: STORAGE_STATE_PATH });
 
+    if (process.platform !== "win32") await fs.chmod(STORAGE_STATE_PATH, 0o600);
     await saveCookiesAsNetscape(context);
 
     console.log(`Session state saved to ${STORAGE_STATE_PATH}`);
@@ -94,7 +95,7 @@ async function saveCookiesAsNetscape(context: BrowserContext) {
         netscapeContent += `${domain}\t${flag}\t${path}\t${secure}\t${expiration}\t${name}\t${value}\n`;
     }
 
-    await fs.writeFile(COOKIES_TXT_PATH, netscapeContent);
+    await fs.writeFile(COOKIES_TXT_PATH, netscapeContent, {mode: 0o600});
 }
 
 

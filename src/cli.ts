@@ -411,6 +411,7 @@ async function runInteractive() {
                 });
 
                 if (summary.failedLessons > 0) {
+                    process.exitCode = 1;
                     log.warn(`${summary.failedLessons} lessons had errors. You can rerun the download to fill gaps.`);
                 }
             } catch (err) {
@@ -420,6 +421,7 @@ async function runInteractive() {
         }
 
         if (failedCourses > 0) {
+                process.exitCode = 1;
             log.warn(`${failedCourses} courses failed. You can rerun to fill gaps.`);
         }
 
@@ -474,6 +476,7 @@ async function runInteractive() {
     });
 
     if (summary.failedLessons > 0) {
+                    process.exitCode = 1;
         log.warn(`${summary.failedLessons} lessons had errors. You can rerun the download to fill gaps.`);
     }
 
@@ -619,7 +622,7 @@ async function runWithArgs(args: CliArgs) {
             for (const course of accessible) {
                 try {
                     const folderTitle = courseFolderTitle(course, library.courses);
-                    await downloadCourse({
+                    const result = await downloadCourse({
                         url: course.url,
                         outputDir: outputRoot ? resolveCourseOutputDir(outputRoot, library.groupName, folderTitle) : undefined,
                         courseDirName: folderTitle,
@@ -627,6 +630,7 @@ async function runWithArgs(args: CliArgs) {
                         mode: 'course',
                         skipModules: args.skipModules
                     });
+                    if (result.failedLessons) failedCourses += 1;
                 } catch (err) {
                     failedCourses += 1;
                     console.error(`Failed to download course ${course.title}: ${String(err)}`);
@@ -634,12 +638,13 @@ async function runWithArgs(args: CliArgs) {
             }
 
             if (failedCourses > 0) {
+                process.exitCode = 1;
                 console.warn(`${failedCourses} courses failed.`);
             }
             return;
         }
 
-        await downloadCourse({
+        const result = await downloadCourse({
             url: args.url,
             outputDir: args.outputDir,
             concurrency: args.concurrency,
@@ -647,6 +652,7 @@ async function runWithArgs(args: CliArgs) {
             lessonId: args.lessonId,
             skipModules: args.skipModules
         });
+        if (result.failedLessons) process.exitCode = 1;
         return;
     }
 

@@ -1,3 +1,4 @@
+import { safeDocument, escapeHtml } from './archive-safety.js';
 import fs from 'fs-extra';
 import path from 'path';
 
@@ -246,7 +247,7 @@ async function regenerateIndex(
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>${courseName}${groupName ? ` (${groupName})` : ''} - Backup</title>
+                <title>${escapeHtml(courseName)}${groupName ? ` (${escapeHtml(groupName)})` : ''} - Backup</title>
                 <style>
                     :root {
                         --bg: #f6f3ee;
@@ -422,15 +423,15 @@ async function regenerateIndex(
                 <div class="page">
                     ${groupName ? `
                         <div class="breadcrumb">
-                            <a href="../index.html">${groupName}</a>
+                            <a href="../index.html">${escapeHtml(groupName)}</a>
                             <span>/</span>
-                            <span>${courseName}</span>
+                            <span>${escapeHtml(courseName)}</span>
                         </div>
                     ` : ''}
                     <section class="hero">
                         <div class="hero-copy">
-                            <h1 class="hero-title">${courseName}</h1>
-                            <p class="hero-subtitle">${groupName ? `Community: ${groupName}` : 'Course Archive'}</p>
+                            <h1 class="hero-title">${escapeHtml(courseName)}</h1>
+                            <p class="hero-subtitle">${groupName ? `Community: ${escapeHtml(groupName)}` : 'Course Archive'}</p>
                             <div class="hero-meta">
                                 <div class="chip"><strong>${courseInfo.reduce((acc, m) => acc + m.lessons.length, 0)}</strong> lessons</div>
                                 <div class="chip"><strong>${courseInfo.length}</strong> modules</div>
@@ -439,7 +440,7 @@ async function regenerateIndex(
                         </div>
                         <div class="hero-image">
                             ${hasCourseImage && courseImagePath
-        ? `<img src="${courseImagePath}" alt="${courseName} cover">`
+        ? `<img src="${courseImagePath}" alt="${escapeHtml(courseName)} cover">`
         : `<div class="fallback">No course image available</div>`}
                         </div>
                     </section>
@@ -447,9 +448,9 @@ async function regenerateIndex(
                     <section class="content">
                         ${courseInfo.map(m => `
                             <div class="module">
-                                <h2 class="module-title"><span>Module ${m.index}</span>${m.title}</h2>
+                                <h2 class="module-title"><span>Module ${m.index}</span>${escapeHtml(m.title)}</h2>
                                 <ul class="lesson-list">
-                                    ${m.lessons.map((l: any) => `<li class="lesson"><a href="${l.path}">${l.title}</a></li>`).join('')}
+                                    ${m.lessons.map((l: any) => `<li class="lesson"><a href="${l.path}">${escapeHtml(l.title)}</a></li>`).join('')}
                                 </ul>
                             </div>
                         `).join('')}
@@ -460,7 +461,7 @@ async function regenerateIndex(
         `;
 
     // Write the index file
-    await writeAtomicHtml(path.join(downloadsDir, 'index.html'), indexHtml);
+    await writeAtomicHtml(path.join(downloadsDir, 'index.html'), safeDocument(indexHtml));
 
     log('\n✅ Index regenerated successfully!');
     log(`📊 Found ${courseInfo.length} modules with ${courseInfo.reduce((acc, m) => acc + m.lessons.length, 0)} lessons total`);

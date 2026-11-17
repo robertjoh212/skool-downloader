@@ -1,3 +1,4 @@
+import { cleanLessonHtml, safeDocument, escapeHtml, localizeCourseLinks } from './archive-safety.js';
 import { Scraper, Module } from './scraper.js';
 import { Downloader } from './downloader.js';
 import { regenerateIndex } from './regenerate-index.js';
@@ -72,6 +73,8 @@ type LessonManifest = {
     lessonUrl?: string;
     videoLink?: string;
     videoError?: string;
+    archiveErrors?: string[];
+    status?: 'complete' | 'incomplete';
     linksCount?: number;
     failedLinks?: number;
     updatedAt: string;
@@ -441,7 +444,8 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                             const lessonData = await scraper.extractLessonData(lesson.url);
 
                             updateStatus('Localizing images...');
-                            const localizedHtml = await downloader.localizeImages(lessonData.contentHtml || '', lessonDir);
+                            const archiveErrors: string[] = [];
+                            const localizedHtml = await downloader.localizeImages(cleanLessonHtml(lessonData.contentHtml || ''), lessonDir, message => archiveErrors.push(message));
 
                             let hasVideo = false;
                             let videoError: string | undefined;
@@ -451,7 +455,8 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                     await downloader.downloadVideo(lessonData.videoLink, lessonDir, 'video');
                                     hasVideo = true;
                                 } catch (err) {
-                                    videoError = String(err).slice(0, 500);
+                                    videoError = 'Video download or validation failed. Rerun this lesson to retry.';
+                                    archiveErrors.push(videoError);
                                     logger.warn(`    ⚠️ Failed to download video for ${lesson.title}`);
                                 }
                             }
@@ -462,7 +467,7 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                 await fs.ensureDir(resourcesDir);
 
                                 const resTasks = lessonData.resources.map(async (res) => {
-                                    if (!res.downloadUrl) return null;
+                                    if (!res.downloadUrl) { archiveErrors.push('Attachment unavailable: ' + res.title); return null; }
 
                                     // External links are saved by the link archiver below.
                                     if (res.isExternal) return null;
@@ -475,16 +480,17 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                         if (fs.existsSync(resPath)) {
                                             const stats = fs.statSync(resPath);
                                             if (stats.size > 0) {
-                                                logger.info(`    ⏭️  Resource already exists, skipping: ${res.title}`);
-                                                return `<li><a href="resources/${encodeURIComponent(safeFileName)}" target="_blank">${res.title}</a></li>`;
+                                                logger.info(`    ⏭️  Resource already exists, skipping: ${escapeHtml(res.title)}`);
+                                                return `<li><a href="resources/${encodeURIComponent(safeFileName)}" target="_blank">${escapeHtml(res.title)}</a></li>`;
                                             }
                                         }
 
-                                        logger.info(`    ⬇️  Downloading resource: ${res.title}`);
+                                        logger.info(`    ⬇️  Downloading resource: ${escapeHtml(res.title)}`);
                                         await downloader.downloadAsset(res.downloadUrl, resPath);
-                                        return `<li><a href="resources/${encodeURIComponent(safeFileName)}" target="_blank">${res.title}</a></li>`;
+                                        return `<li><a href="resources/${encodeURIComponent(safeFileName)}" target="_blank">${escapeHtml(res.title)}</a></li>`;
                                     } catch (err) {
-                                        logger.warn(`    ⚠️  Failed to download resource ${res.title}: ${String(err)}`);
+                                        archiveErrors.push('Attachment download failed: ' + res.title);
+                                        logger.warn(`    ⚠️  Failed to download resource ${escapeHtml(res.title)}: ${String(err)}`);
                                         return null;
                                     }
                                 });
@@ -507,13 +513,14 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                 await writeAtomicJson(path.join(lessonDir, 'links.json'), links);
                             }
                             const failedLinks = links.filter(l => l.status === 'failed').length;
+                            if (failedLinks) archiveErrors.push(failedLinks + ' linked resources could not be saved.');
 
                             const isRootLesson = mInfo.moduleDirName.length === 0;
                             const groupLink = isRootLesson ? '../../index.html' : '../../../index.html';
                             const courseLink = isRootLesson ? '../index.html' : '../../index.html';
                             const moduleBreadcrumb = isRootLesson
                                 ? ''
-                                : `<span>/</span><span>${module.title}</span>`;
+                                : `<span>/</span><span>${escapeHtml(module.title)}</span>`;
 
                             const htmlContent = `
                             <!DOCTYPE html>
@@ -521,7 +528,7 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                             <head>
                                 <meta charset="UTF-8">
                                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                                <title>${lessonData.title}</title>
+                                <title>${escapeHtml(lessonData.title)}</title>
                                 <style>
                                     :root {
                                         --bg: #f6f3ee;
@@ -601,21 +608,23 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                     .links ul.nested { margin: 6px 0 0 18px; }
                                     a { color: var(--accent); text-decoration: none; word-break: break-word; }
                                     a:hover { text-decoration: underline; }
+                                    a[href^="http"]::after { content: " ↗ online"; font-size: .8em; }
                                     .nav { margin-top: 28px; padding-top: 16px; border-top: 1px solid rgba(20,22,29,0.08); }
                                 </style>
                             </head>
                             <body>
                                 <div class="page">
                                     <div class="breadcrumb">
-                                        <a href="${groupLink}">${groupName}</a>
+                                        <a href="${groupLink}">${escapeHtml(groupName)}</a>
                                         <span>/</span>
-                                        <a href="${courseLink}">${courseName}</a>
+                                        <a href="${courseLink}">${escapeHtml(courseName)}</a>
                                         ${moduleBreadcrumb}
                                         <span>/</span>
-                                        <span>${lessonData.title}</span>
+                                        <span>${escapeHtml(lessonData.title)}</span>
                                     </div>
                                     <div class="container">
-                                        <h1>${lessonData.title}</h1>
+                                        <h1>${escapeHtml(lessonData.title)}</h1>
+                                        ${archiveErrors.length ? `<aside class="resources"><h3>Archive incomplete</h3><ul>${archiveErrors.map(e => "<li>"+escapeHtml(e)+"</li>").join("")}</ul></aside>` : ""}
                                         ${hasVideo ? '<video controls src="video.mp4"></video>' : ''}
                                         <div class="content">
                                             ${localizedHtml}
@@ -645,7 +654,7 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                             </html>
                         `;
 
-                            await fs.writeFile(path.join(lessonDir, 'index.html'), htmlContent);
+                            await fs.writeFile(path.join(lessonDir, 'index.html'), safeDocument(htmlContent));
 
                             updateStatus('Saving metadata...');
                             const lessonManifest: LessonManifest = {
@@ -664,6 +673,8 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
                                 lessonUrl: lesson.url,
                                 videoLink: lessonData.videoLink || undefined,
                                 videoError,
+                                archiveErrors,
+                                status: archiveErrors.length ? "incomplete" : "complete",
                                 linksCount: links.length,
                                 failedLinks,
                                 updatedAt: new Date().toISOString()
@@ -671,6 +682,9 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
 
                             await writeAtomicJson(path.join(lessonDir, 'lesson.json'), lessonManifest);
 
+                            if (archiveErrors.length) {
+                                throw new Error('Archive incomplete: ' + archiveErrors.join('; '));
+                            }
                             completedLessons += 1;
                             options.callbacks?.onLessonComplete?.({
                                 moduleIndex: mInfo.mIndex,
@@ -702,6 +716,7 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
         } else {
             await runConcurrent(tasks.map(task => () => task.run()), concurrency);
         }
+        await localizeCourseLinks(baseOutputDir);
         await indexLimit(() => regenerateIndex(baseOutputDir, { silent: options.suppressIndexLogs }));
         await groupIndexLimit(() => regenerateGroupIndex(activeGroupDir ?? path.dirname(baseOutputDir), { silent: options.suppressIndexLogs }));
 
@@ -718,7 +733,8 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
 
         options.callbacks?.onCourseComplete?.(summary);
 
-        logger.info('\n✨ All downloads complete!');
+        if (failedLessons) logger.warn('Archive incomplete: ' + failedLessons + ' lessons need retrying.');
+        else logger.info('\n✨ All downloads complete!');
         logger.info(`Check your files in: ${baseOutputDir}`);
 
         return summary;

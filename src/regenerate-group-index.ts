@@ -1,3 +1,4 @@
+import { safeDocument, escapeHtml } from './archive-safety.js';
 import fs from 'fs-extra';
 import path from 'path';
 
@@ -174,7 +175,7 @@ async function regenerateGroupIndex(
                 const resolvedImagePath = path.join(coursePath, course.courseImagePath);
                 if (await fs.pathExists(resolvedImagePath)) {
                     const imageSrc = `${course.dirName}/${course.courseImagePath}`;
-                    imageMarkup = `<img src="${imageSrc}" alt="${course.courseName} cover">`;
+                    imageMarkup = `<img src="${imageSrc}" alt="${escapeHtml(course.courseName)} cover">`;
                 }
             }
 
@@ -186,7 +187,7 @@ async function regenerateGroupIndex(
                 <a class="course-card" href="${courseIndexPath}">
                     <div class="course-image">${imageMarkup}</div>
                     <div class="course-body">
-                        <h2>${course.courseName}</h2>
+                        <h2>${escapeHtml(course.courseName)}</h2>
                         <p class="course-meta">Updated ${updatedLabel}</p>
                         <div class="course-stats">
                             <span><strong>${course.modulesCount}</strong> modules</span>
@@ -204,7 +205,7 @@ async function regenerateGroupIndex(
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>${groupName} - Courses</title>
+            <title>${escapeHtml(groupName)} - Courses</title>
             <style>
                 :root {
                     --bg: #f8f6f1;
@@ -334,7 +335,7 @@ async function regenerateGroupIndex(
         <body>
             <div class="page">
                 <section class="hero">
-                    <h1 class="hero-title">${groupName}</h1>
+                    <h1 class="hero-title">${escapeHtml(groupName)}</h1>
                     <p class="hero-subtitle">All downloaded courses for this community.</p>
                     <div class="hero-meta">
                         <div class="chip"><strong>${courses.length}</strong> courses</div>
@@ -350,7 +351,7 @@ async function regenerateGroupIndex(
         </html>
     `;
 
-    await writeAtomicHtml(path.join(groupDir, 'index.html'), indexHtml);
+    await writeAtomicHtml(path.join(groupDir, 'index.html'), safeDocument(indexHtml));
 
     log('\nGroup index regenerated successfully.');
     log(`Saved to: ${path.join(groupDir, 'index.html')}`);
