@@ -1,4 +1,5 @@
 import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import fs from 'fs-extra';
@@ -14,7 +15,11 @@ export async function validateVideo(file:string,ffmpeg:string,expected:VideoExpe
  const saved=await fs.readJson(receipt).catch(()=>null);
  const reusable=saved&&[1,2].includes(saved.version)&&saved.sha256===sha256;
  if(!reusable)await new Promise<void>((resolve,reject)=>{
-  const child=spawn(ffmpeg,['-nostdin','-v','error','-xerror','-i',file,'-map','0:v:0','-map','0:a?','-f','null','-'],{windowsHide:true});let errors='';child.stdout.resume();child.stderr.on('data',c=>{errors=(errors+String(c)).slice(-4000)});child.on('error',reject);child.on('close',code=>{const decoderErrors=errors.split(/\r?\n/).filter(line=>!line.includes('Application provided invalid, non monotonically increasing dts to muxer')).join('\n').trim();code===0&&!decoderErrors?resolve():reject(new Error('Video validation failed: '+(decoderErrors||'FFmpeg exit '+code)));});
+  const child=spawn(ffmpeg,['-nostdin','-v','error','-xerror','-i',file,'-map','0:v:0','-map','0:a?','-f','null','-'],{windowsHide:true});let decoderErrors='';child.stdout.resume();
+  // Filter complete lines before bounding diagnostics: truncating first could leave a warning fragment that falsely fails validation.
+  const lines=createInterface({input:child.stderr,crlfDelay:Infinity});
+  lines.on('line',line=>{if(line.trim()&&!/^\[null @ [^\]]+\] Application provided invalid, non monotonically increasing dts to muxer in stream \d+: -?\d+ >= -?\d+\s*$/.test(line))decoderErrors=(decoderErrors+line+'\n').slice(-4000);});
+  child.on('error',reject);child.on('close',code=>{code===0&&!decoderErrors.trim()?resolve():reject(new Error('Video validation failed: '+(decoderErrors.trim()||'FFmpeg exit '+code)));});
  });
  const actualSeconds=reusable&&saved.actualSeconds>0?saved.actualSeconds:await probeDuration(file,ffmpeg);
  const expectedSeconds=Number(expected.duration)>0?expected.duration:undefined;

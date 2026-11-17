@@ -232,6 +232,23 @@ async function regenerateIndex(
         courseInfo.sort((a, b) => a.index - b.index);
     }
 
+
+    const plan=await fs.readJson(path.join(downloadsDir,'.lesson-plan.json')).catch(()=>null);
+    if(plan?.modules?.length){
+        const saved=new Map(courseInfo.flatMap(m=>m.lessons).map(l=>[l.path,l]));
+        const plannedModules=[];
+        for(const module of plan.modules){
+            const lessons=[];
+            for(const lesson of module.lessons){
+                const available=await fs.pathExists(path.join(downloadsDir,lesson.path));
+                const metadata=await fs.readJson(path.join(downloadsDir,path.dirname(lesson.path),'lesson.json')).catch(()=>null);
+                lessons.push({...lesson,...saved.get(lesson.path),available,status:available?(metadata?.status==='incomplete'?'Retry later':'Available'):'Pending download'});
+            }
+            plannedModules.push({...module,lessons});
+        }
+        courseInfo.splice(0,courseInfo.length,...plannedModules);
+    }
+
     const courseName = courseManifest?.courseName || 'Course Archive';
     const groupName = courseManifest?.groupName || '';
     const courseImagePath = courseManifest?.courseImagePath;
@@ -251,8 +268,8 @@ async function regenerateIndex(
         const previous = orderedLessons[position - 1];
         const next = orderedLessons[position + 1];
         const navigation = '<!-- lesson-order --><nav style="padding:14px 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center" aria-label="Lesson order"><strong>Lesson ' + (position + 1) + ' of ' + orderedLessons.length + '</strong>'
-            + (previous ? '<a href="' + href(previous.path) + '">← Previous: ' + escapeHtml(previous.title) + '</a>' : '')
-            + (next ? '<a href="' + href(next.path) + '">Next: ' + escapeHtml(next.title) + ' →</a>' : '')
+            + (previous && previous.available!==false ? '<a href="' + href(previous.path) + '">← Previous: ' + escapeHtml(previous.title) + '</a>' : '')
+            + (next && next.available!==false ? '<a href="' + href(next.path) + '">Next: ' + escapeHtml(next.title) + ' →</a>' : '')
             + '</nav><!-- end-lesson-order -->';
         page = page.replace(/(<h1[^>]*>[\s\S]*?<\/h1>)/, '$1' + navigation);
         await fs.writeFile(file, page);
@@ -413,7 +430,7 @@ async function regenerateIndex(
                         margin: 0;
                         list-style: none;
                     }
-                    .lesson a {
+                    .lesson a, .lesson .pending {
                         display: block;
                         padding: 12px 14px;
                         border-radius: 14px;
@@ -427,6 +444,8 @@ async function regenerateIndex(
                         transition: border-color 0.25s ease, transform 0.25s ease;
                         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
                     }
+                    .lesson .pending { color:#65738b; }
+                    .lesson-status { display:block;font-size:0.85rem;color:#8b5d10; }
                     .lesson a:hover {
                         border-color: rgba(59,130,246,0.6);
                         transform: translateY(-2px);
@@ -467,13 +486,13 @@ async function regenerateIndex(
                     </section>
 
                     <p>Follow the lessons below from top to bottom.</p>
-                    ${courseInfo[0]?.lessons[0] ? `<p><a class="start-course" href="${courseInfo[0].lessons[0].path}">Start course → Lesson ${courseInfo[0].lessons[0].index}</a></p>` : ''}
+                    ${courseInfo[0]?.lessons[0] ? (courseInfo[0].lessons[0].available===false ? `<p>Lesson ${courseInfo[0].lessons[0].index} is pending download. <a href="index.html">Refresh course</a></p>` : `<p><a class="start-course" href="${courseInfo[0].lessons[0].path}">Start course → Lesson ${courseInfo[0].lessons[0].index}</a></p>`) : ''}
                     <section class="content">
                         ${courseInfo.map(m => `
                             <div class="module">
                                 <h2 class="module-title"><span>Module ${m.index}</span>${escapeHtml(m.title)}</h2>
                                 <ul class="lesson-list">
-                                    ${m.lessons.map((l: any) => `<li class="lesson"><a href="${l.path}">${l.index}. ${escapeHtml(l.title)}</a></li>`).join('')}
+                                    ${m.lessons.map((l: any) => `<li class="lesson">${l.available===false ? `<div class="pending">${l.index}. ${escapeHtml(l.title)}<span class="lesson-status">Pending download</span></div>` : `<a href="${l.path}">${l.index}. ${escapeHtml(l.title)}${l.status==='Retry later'?'<span class="lesson-status">Retry later</span>':''}</a>`}</li>`).join('')}
                                 </ul>
                             </div>
                         `).join('')}

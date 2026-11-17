@@ -58,7 +58,7 @@ export async function downloadLibrary(url:string,root:string,adopt?:Adoption){
      stats=await courseStats(folder);
     }
     const transcription=await fs.readJson(path.join(folder,'transcription-status.json')).catch(()=>null);
-    course.status=stats.retries||stats.incomplete||course.downloadSummary?.failed||(course.expectedLessons&&stats.lessons<course.expectedLessons)||(transcription?.failed?.length)||stats.transcripts<stats.videos?'retry':stats.durationUnavailable||course.inventoryUnavailable?'review':'complete';
+    course.status=stats.retries||stats.validationFailed||stats.incomplete||course.downloadSummary?.failed||(course.expectedLessons&&stats.lessons<course.expectedLessons)||(transcription?.failed?.length)||stats.transcripts<stats.videos?'retry':stats.durationUnavailable||stats.validationPending||stats.durationPending||course.inventoryUnavailable?'review':'complete';
     if(!stats.lessons)course.status='retry';
     delete course.currentLesson;
     await buildSearch(root);await event(course);

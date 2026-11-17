@@ -1,3 +1,4 @@
+import { hlsDuration } from './hls-duration.js';
 import { createHash } from 'node:crypto';
 import { validateVideo, VideoDurationMismatch, type VideoExpectation } from './video-validation.js';
 import YTDlpWrapPkg from 'yt-dlp-wrap';
@@ -508,6 +509,7 @@ export class Downloader {
     }
 
     async inspectVideo(url: string): Promise<VideoExpectation> {
+        if(/\.m3u8(?:[?#]|$)/i.test(url)){const duration=await hlsDuration(url).catch(()=>undefined);if(duration)return {duration};}
         if (!this.ytDlp) await this.init();
         const args=[normalizeVideoUrl(url),'--dump-single-json','--skip-download','--no-playlist','--socket-timeout','20','--retries','2'];
         if(fs.existsSync(COOKIES_TXT_PATH))args.push('--cookies',COOKIES_TXT_PATH);

@@ -274,6 +274,7 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
             modules = modules.filter(m => !skipped.includes(m));
         }
 
+        const outlineModules = structuredClone(modules);
         if (targetLessonId) {
             logger.info(`📍 Single lesson mode: Finding lesson ${targetLessonId}...`);
             let found = false;
@@ -316,6 +317,8 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
         }
 
         await fs.ensureDir(baseOutputDir);
+        await writeAtomicJson(path.join(baseOutputDir,'.lesson-plan.json'),{modules:outlineModules.map(m=>{const moduleDirName=m.root?'':m.index+'-'+sanitizeName(m.title);return {title:m.title,index:m.index,moduleDirName,lessons:m.lessons.map(l=>({title:l.title,index:l.index??1,lessonId:l.id,path:[moduleDirName,(l.index??1)+'-'+sanitizeName(l.title),'index.html'].filter(Boolean).join('/')}))};})});
+        await regenerateIndex(baseOutputDir,{silent:true});
         activeOutputDir = baseOutputDir;
         activeGroupDir = path.dirname(baseOutputDir);
         registerShutdownHandlers(logger);
