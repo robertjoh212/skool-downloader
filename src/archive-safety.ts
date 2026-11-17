@@ -16,8 +16,8 @@ export function cleanLessonHtml(html: string): string {
 }
 export function safeDocument(html: string): string {
   const clean = sanitizeHtml(html, {
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'html','head','body','title','style','meta','img','video','source'],
-    allowedAttributes: {'*':['class','id','title'],a:['href','target','rel'],img:['src','alt'],video:['src','controls'],source:['src','type'],meta:['charset','name','content'],ol:['start']},
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'html','head','body','title','style','meta','img','video','source','input','button','label','form','details','summary'],
+    allowedAttributes: {'*':['class','id','title','role'],a:['href','target','rel'],img:['src','alt'],video:['src','controls'],source:['src','type'],input:['id','type','placeholder','autofocus'],button:['type'],label:['for'],form:['id'],meta:['charset','name','content'],ol:['start']},
     allowedSchemes:['http','https','mailto'],
     allowProtocolRelative:false,
     allowVulnerableTags:true

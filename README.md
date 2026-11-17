@@ -178,3 +178,7 @@ This tool is for **personal backup and offline viewing purposes only**. Please r
 ## 📄 License
 
 This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license. See `LICENSE` for the full legal code.
+
+## MrMime branch additions
+
+This branch adds local GPU transcripts, offline search with video timestamp links, numbered course navigation, and archive integrity fixes. See [MRMIME.md](MRMIME.md) for setup and commands.

@@ -13,7 +13,8 @@
     "skool": "tsx src/cli.ts",
     "login": "tsx src/cli.ts login",
     "regenerate-index": "tsx src/cli.ts regenerate-index",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "preview": "node scripts/serve.mjs"
   },
   "author": "balmasi",
   "license": "CC-BY-NC-4.0",
@@ -30,7 +31,10 @@
     "README.md",
     "LICENSE",
     "package.json",
-    "tsconfig.json"
+    "tsconfig.json",
+    "scripts/transcribe.py",
+    "requirements-transcription.txt",
+    "scripts/serve.mjs"
   ],
   "dependencies": {
     "@clack/prompts": "^0.11.0",

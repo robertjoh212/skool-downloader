@@ -240,6 +240,24 @@ async function regenerateIndex(
         : null;
     const hasCourseImage = resolvedCourseImagePath ? await fs.pathExists(resolvedCourseImagePath) : false;
 
+    // Keep lesson order visible, with navigation across module boundaries.
+    const orderedLessons = courseInfo.flatMap(m => m.lessons);
+    for (const [position, lesson] of orderedLessons.entries()) {
+        const file = path.join(downloadsDir, lesson.path);
+        if (!await fs.pathExists(file)) continue;
+        let page = await fs.readFile(file, 'utf8');
+        page = page.replace(/<!-- lesson-order -->[\s\S]*?<!-- end-lesson-order -->/g, '');
+        const href = (target: string) => path.relative(path.dirname(file), path.join(downloadsDir, target)).split(path.sep).map(encodeURIComponent).join('/');
+        const previous = orderedLessons[position - 1];
+        const next = orderedLessons[position + 1];
+        const navigation = '<!-- lesson-order --><nav style="padding:14px 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center" aria-label="Lesson order"><strong>Lesson ' + (position + 1) + ' of ' + orderedLessons.length + '</strong>'
+            + (previous ? '<a href="' + href(previous.path) + '">← Previous: ' + escapeHtml(previous.title) + '</a>' : '')
+            + (next ? '<a href="' + href(next.path) + '">Next: ' + escapeHtml(next.title) + ' →</a>' : '')
+            + '</nav><!-- end-lesson-order -->';
+        page = page.replace(/(<h1[^>]*>[\s\S]*?<\/h1>)/, '$1' + navigation);
+        await fs.writeFile(file, page);
+    }
+
     // Generate the index HTML
     const indexHtml = `
             <!DOCTYPE html>
@@ -349,6 +367,7 @@ async function regenerateIndex(
                         color: var(--muted);
                         font-size: 0.95rem;
                     }
+                    .start-course { display:inline-block; background:#2559b5; color:white; padding:12px 20px; border-radius:12px; font-weight:700; text-decoration:none; }
                     .content {
                         margin-top: 36px;
                         display: grid;
@@ -385,7 +404,7 @@ async function regenerateIndex(
                     }
                     .lesson-list {
                         display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                        grid-template-columns: 1fr;
                         gap: 12px 16px;
                         align-items: stretch;
                         grid-auto-flow: row dense;
@@ -445,12 +464,14 @@ async function regenerateIndex(
                         </div>
                     </section>
 
+                    <p>Follow the lessons below from top to bottom.</p>
+                    ${courseInfo[0]?.lessons[0] ? `<p><a class="start-course" href="${courseInfo[0].lessons[0].path}">Start course → Lesson ${courseInfo[0].lessons[0].index}</a></p>` : ''}
                     <section class="content">
                         ${courseInfo.map(m => `
                             <div class="module">
                                 <h2 class="module-title"><span>Module ${m.index}</span>${escapeHtml(m.title)}</h2>
                                 <ul class="lesson-list">
-                                    ${m.lessons.map((l: any) => `<li class="lesson"><a href="${l.path}">${escapeHtml(l.title)}</a></li>`).join('')}
+                                    ${m.lessons.map((l: any) => `<li class="lesson"><a href="${l.path}">${l.index}. ${escapeHtml(l.title)}</a></li>`).join('')}
                                 </ul>
                             </div>
                         `).join('')}

@@ -1,3 +1,4 @@
+import { transcribeCourse, buildSearch } from './transcription.js';
 import { cleanLessonHtml, safeDocument, escapeHtml, localizeCourseLinks } from './archive-safety.js';
 import { Scraper, Module } from './scraper.js';
 import { Downloader } from './downloader.js';
@@ -126,6 +127,7 @@ export type DownloadOptions = {
     url: string;
     outputDir?: string;
     concurrency?: number;
+    transcribe?: boolean;
     mode?: DownloadMode;
     lessonId?: string | null;
     /** Modules whose title matches any of these (case-insensitive regex) are not downloaded. */
@@ -719,6 +721,9 @@ export async function downloadCourse(options: DownloadOptions): Promise<Download
         await localizeCourseLinks(baseOutputDir);
         await indexLimit(() => regenerateIndex(baseOutputDir, { silent: options.suppressIndexLogs }));
         await groupIndexLimit(() => regenerateGroupIndex(activeGroupDir ?? path.dirname(baseOutputDir), { silent: options.suppressIndexLogs }));
+
+        if (options.transcribe) await transcribeCourse(baseOutputDir);
+        else if (await fs.pathExists(path.join(baseOutputDir, 'search.html'))) await buildSearch(baseOutputDir);
 
         const summary: DownloadSummary = {
             courseName,

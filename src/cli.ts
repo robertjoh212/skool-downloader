@@ -1,3 +1,4 @@
+import { transcribeCourse, buildSearch } from './transcription.js';
 import { intro, outro, select, text, confirm, spinner, isCancel, cancel, log, multiselect } from '@clack/prompts';
 import pc from 'picocolors';
 import path from 'path';
@@ -16,6 +17,7 @@ type CliArgs = {
     url?: string;
     outputDir?: string;
     concurrency?: number;
+    transcribe?: boolean;
     mode?: DownloadMode;
     lessonId?: string | null;
     regenerateDir?: string;
@@ -25,7 +27,7 @@ type CliArgs = {
 };
 
 function showHelp() {
-    console.log(`\nSkool Downloader\n\nUsage:\n  skool                          Interactive mode\n  skool login                    Log in to Skool\n  skool <classroom-url>          Download a course\n  skool <group-classroom-url>    Download all courses in a community\n  skool <lesson-url>             Download a single lesson (URL with ?md=)\n  skool regenerate-index         Regenerate all course indexes\n  skool update                   Update the yt-dlp binary to the latest release\n\nOptions:\n  -o, --output <dir>             Output directory (course root)\n  -c, --concurrency <number>     Lesson concurrency (default: 8)\n  --course                       Force course mode (ignore ?md=)\n  --lesson                       Force lesson mode\n  --lesson-id <id>               Explicit lesson id\n  --skip-module <regex>          Skip modules whose title matches (repeatable)\n  --skip-course <regex>          With a community URL, skip matching courses (repeatable)\n  --rollback                     With 'update', restore the previous yt-dlp\n  -h, --help                     Show help\n\nEnvironment:\n  SKOOL_DOWNLOADER_CACHE_DIR     Where the yt-dlp binary is kept\n  SKOOL_NO_YTDLP_UPDATE=1        Never check for a newer yt-dlp automatically\n`);
+    console.log(`\nSkool Downloader\n\nUsage:\n  skool                          Interactive mode\n  skool login                    Log in to Skool\n  skool <classroom-url>          Download a course\n  skool <group-classroom-url>    Download all courses in a community\n  skool <lesson-url>             Download a single lesson (URL with ?md=)\n  skool regenerate-index         Regenerate all course indexes\n  skool transcribe <folder>      Transcribe videos and build offline search\n  skool search-index <folder>    Rebuild search from saved transcripts\n  skool update                   Update the yt-dlp binary to the latest release\n\nOptions:\n  -o, --output <dir>             Output directory (course root)\n  -c, --concurrency <number>     Lesson concurrency (default: 8)\n  --transcribe                   Transcribe after downloading (requires Python setup)\n  --course                       Force course mode (ignore ?md=)\n  --lesson                       Force lesson mode\n  --lesson-id <id>               Explicit lesson id\n  --skip-module <regex>          Skip modules whose title matches (repeatable)\n  --skip-course <regex>          With a community URL, skip matching courses (repeatable)\n  --rollback                     With 'update', restore the previous yt-dlp\n  -h, --help                     Show help\n\nEnvironment:\n  SKOOL_DOWNLOADER_CACHE_DIR     Where the yt-dlp binary is kept\n  SKOOL_NO_YTDLP_UPDATE=1        Never check for a newer yt-dlp automatically\n`);
 }
 
 function parseArgs(args: string[]): CliArgs {
@@ -33,6 +35,7 @@ function parseArgs(args: string[]): CliArgs {
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
+        if (arg === '--transcribe') { parsed.transcribe = true; continue; }
 
         if (arg === 'login') {
             parsed.command = 'login';
@@ -627,6 +630,7 @@ async function runWithArgs(args: CliArgs) {
                         outputDir: outputRoot ? resolveCourseOutputDir(outputRoot, library.groupName, folderTitle) : undefined,
                         courseDirName: folderTitle,
                         concurrency: args.concurrency,
+                        transcribe: args.transcribe,
                         mode: 'course',
                         skipModules: args.skipModules
                     });
@@ -648,6 +652,7 @@ async function runWithArgs(args: CliArgs) {
             url: args.url,
             outputDir: args.outputDir,
             concurrency: args.concurrency,
+            transcribe: args.transcribe,
             mode: args.mode,
             lessonId: args.lessonId,
             skipModules: args.skipModules
@@ -660,7 +665,14 @@ async function runWithArgs(args: CliArgs) {
 }
 
 async function main() {
-    const args = parseArgs(process.argv.slice(2));
+    const raw = process.argv.slice(2);
+    if (raw[0] === 'transcribe' || raw[0] === 'search-index') {
+        if (!raw[1]) throw new Error('Provide the course folder.');
+        if (raw[0] === 'transcribe') await transcribeCourse(path.resolve(raw[1]));
+        else console.log(await buildSearch(path.resolve(raw[1])));
+        return;
+    }
+    const args = parseArgs(raw);
     await runWithArgs(args);
 }
 
