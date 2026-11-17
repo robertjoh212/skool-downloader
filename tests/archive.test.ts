@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 await fs.ensureDir(path.resolve('.test-output'));
 const root=await fs.mkdtemp(path.resolve('.test-output/run-'));
 process.env.SKOOL_DOWNLOADER_CACHE_DIR=path.join(root,'tools');
-const {cleanLessonHtml,safeDocument,localizeCourseLinks}=await import('../src/archive-safety.js');
+const {cleanLessonHtml,safeDocument,localizeCourseLinks,extractContentUrls}=await import('../src/archive-safety.js');
 const {validateVideo}=await import('../src/video-validation.js');
 const {Downloader,resolveFfmpegPath}=await import('../src/downloader.js');
 const {Scraper}=await import('../src/scraper.js');
@@ -92,4 +92,11 @@ test('course pipeline reports missing media, renders warnings, and recovers on r
   assert.doesNotMatch(html,/Archive incomplete/);
   assert.match(html,/<video controls src="video.mp4"><\/video>/);
  } finally {Scraper.prototype.parseClassroom=originalParse;Scraper.prototype.extractLessonData=originalExtract;}
+});
+
+test('pasted document URLs and HTML links are collected without duplicate downloads',()=>{
+ const url='https://docs.google.com/document/d/example/edit?usp=sharing';
+ const links=extractContentUrls('<p>'+url+'</p><a href="'+url+'">Document</a>');
+ assert.deepEqual(links,[{url,title:url}]);
+ assert.deepEqual(extractContentUrls('<p>No links</p>'),[]);
 });

@@ -10,6 +10,7 @@ This branch extends balmasi/skool-downloader. Upstream license and attribution r
 - Keeps TLS certificate verification enabled.
 - Sanitizes lesson HTML and generated documents; adds a restrictive Content Security Policy.
 - Uses hashed image filenames and rewrites image references only after successful downloads.
+- Finds document URLs pasted as plain text as well as clickable links.
 - Rewrites links to saved lessons within the same course; other web links are marked "online."
 - Restricts session-file permissions on platforms supporting POSIX modes. Windows uses the user's existing directory ACLs.
 
@@ -25,7 +26,7 @@ npm run skool -- "YOUR_SINGLE_LESSON_URL" --concurrency 1
 Log in yourself in the browser opened by the application. Start with one lesson before downloading a full course. Preserve the whole output folder to keep relative links working. Open the community index.html in a browser.
 
 ## Verification
-Six automated tests cover HTML filtering, corrupt video detection, image-download failures, local link rewriting, actual yt-dlp downloads from a local fixture server, and failure/retry through the course pipeline. The course structure is synthetic; these tests do not establish compatibility with any particular live Skool classroom. A one-second generated test video is used; no course content or credentials are committed.
+Seven automated tests cover HTML filtering, corrupt video detection, image-download failures, local link rewriting, actual yt-dlp downloads from a local fixture server, and failure/retry through the course pipeline. The course structure is synthetic; these tests do not establish compatibility with any particular live Skool classroom. A one-second generated test video is used; no course content or credentials are committed.
 
 ## Limits
 A decoded video is not proof that the publisher's original video was complete; an already-valid shortened source cannot be detected without authoritative source metadata. Video recognition still depends on the upstream scraper. Cross-course links and external services may require internet access. Transcripts, search and watch-progress tracking are not added by this patch.

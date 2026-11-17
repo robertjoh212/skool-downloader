@@ -1,3 +1,4 @@
+import { extractContentUrls } from './archive-safety.js';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
 import fs from 'fs-extra';
 import { createConsoleLogger, type Logger } from './logger.js';
@@ -549,7 +550,7 @@ export class Scraper {
             contentHtml: body,
             videoLink: vLink,
             resources: resources,
-            contentLinks
+            contentLinks: [...new Map([...contentLinks, ...extractContentUrls(body)].map(link => [link.url, link])).values()]
         };
     }
 

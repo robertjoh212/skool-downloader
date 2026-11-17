@@ -61,3 +61,13 @@ export async function localizeCourseLinks(courseDir: string): Promise<void> {
     await fs.writeFile(lesson.file,html);
   }
 }
+
+/** Includes pasted URLs as well as links with href attributes. */
+export function extractContentUrls(html: string): Array<{url: string; title: string}> {
+  const urls = new Set<string>();
+  for (const match of html.matchAll(/https?:\/\/[^\s<>"']+/g)) {
+    const raw = match[0].replace(/&amp;/g,'&').replace(/[.,;]+$/,'');
+    try { const u = new URL(raw); if (u.protocol === 'https:' || u.protocol === 'http:') urls.add(u.href); } catch {}
+  }
+  return [...urls].map(url => ({url,title:url}));
+}
