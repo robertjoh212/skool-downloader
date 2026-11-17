@@ -1,5 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'fs-extra';import path from 'node:path';import {courseStats} from '../src/regenerate-group-index.js';import {regenerateIndex} from '../src/regenerate-index.js';
-import {videoCheckSummary} from '../src/regenerate-group-index.js';
+import {videoCheckSummary,regenerateGroupIndex} from '../src/regenerate-group-index.js';
+test('homepage totals include missing videos and use the same summary for live updates',async()=>{
+ const root=await fs.mkdtemp(path.resolve('.test-output/totals-'));
+ await fs.writeJson(path.join(root,'.library-state.json'),{title:'Test',courses:[{id:'one',title:'One',status:'complete'}]});
+ for(const name of ['saved','missing']){const dir=path.join(root,'one',name);await fs.ensureDir(dir);await fs.writeJson(path.join(dir,'lesson.json'),{title:name,videoLink:'https://example.com/video'});}
+ await fs.writeFile(path.join(root,'one/saved/video.mp4'),'fixture');await fs.writeJson(path.join(root,'one/saved/transcript.json'),{complete:true});
+ await regenerateGroupIndex(root,{silent:true});const progress=await fs.readJson(path.join(root,'library-progress.json'));
+ assert.equal(progress.total.videos,1);assert.equal(progress.total.missingVideos,1);assert.equal(progress.total.expectedVideos,2);assert.equal(progress.courses[0].status,'retry');
+ assert.match(progress.summary,/1 of 2 videos downloaded/);assert.match(progress.summary,/1 of 2 videos transcribed/);
+ assert.ok((await fs.readFile(path.join(root,'index.html'),'utf8')).includes(progress.summary));assert.match(await fs.readFile(path.join(root,'library-client.js'),'utf8'),/textContent=d.summary/);
+});
 test('cards name missing videos without counting text lessons or existing rejected videos as missing',async()=>{
  await fs.ensureDir('.test-output');const root=await fs.mkdtemp(path.resolve('.test-output/missing-'));
  for(const name of ['missing','text','mismatch']){const dir=path.join(root,name);await fs.ensureDir(dir);await fs.writeJson(path.join(dir,'lesson.json'),{title:name,videoLink:name==='text'?undefined:'https://example.com/video',hasVideo:false});}
